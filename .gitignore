@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.firecrawl/
+.venv/
+*.egg-info/
