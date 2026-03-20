@@ -408,18 +408,28 @@ def plot_gptq_comparison(results: dict, save_path: str):
     method_labels = [
         "FP32\nbaseline",
         "GPTQ\nuniform-4bit",
-        "GPTQ\nentropy-4bit",
-        "Absmax\nuniform-4bit\n(prev)",
-        "Absmax\nentropy-4bit\n(prev)",
+        "GPTQ\nentropy [2,8]",
+        "GPTQ\nentropy [3,6]",
+        "Absmax\nuniform\n(prev)",
+        "Absmax\nentropy\n(prev)",
     ]
     ppls = [
         results["FP32 baseline"],
         results["GPTQ uniform 4-bit"],
-        results["GPTQ entropy-linear 4-bit"],
+        results.get(
+            "GPTQ entropy [2,8] 4-bit", results.get("GPTQ entropy-linear 4-bit", 0)
+        ),
+        results.get("GPTQ entropy [3,6] 4-bit", 0),
         ABSMAX_UNIFORM_PPL,
         ABSMAX_ENTROPY_PPL,
     ]
-    colors = ["#2ecc71", "#3498db", "#9b59b6", "#e74c3c", "#e67e22"]
+    # Filter out zero entries (if narrow wasn't run)
+    active = [(l, p) for l, p in zip(method_labels, ppls) if p > 0]
+    method_labels = [a[0] for a in active]
+    ppls = [a[1] for a in active]
+    colors = ["#2ecc71", "#3498db", "#9b59b6", "#1abc9c", "#e74c3c", "#e67e22"][
+        : len(ppls)
+    ]
 
     fig, ax = plt.subplots(figsize=(12, 7))
     bars = ax.bar(
@@ -490,13 +500,17 @@ if __name__ == "__main__":
     TARGET_BITS = 4.0
 
     plan_uniform = uniform_allocation(linear_names, bits=4)
-    plan_entropy = entropy_linear_allocation(
+    plan_entropy_wide = entropy_linear_allocation(
         entropies, min_bits=2, max_bits=8, target_mean_bits=TARGET_BITS
+    )
+    plan_entropy_narrow = entropy_linear_allocation(
+        entropies, min_bits=3, max_bits=6, target_mean_bits=TARGET_BITS
     )
 
     for plan_name, plan in [
         ("uniform-4bit", plan_uniform),
-        ("entropy-linear", plan_entropy),
+        ("entropy-wide [2,8]", plan_entropy_wide),
+        ("entropy-narrow [3,6]", plan_entropy_narrow),
     ]:
         bits_vals = list(plan.layer_bits.values())
         print(
@@ -519,21 +533,33 @@ if __name__ == "__main__":
     ppl_gptq_uniform = measure_perplexity(q_model_uniform, tokenizer)
     del q_model_uniform
 
-    # -- 6. GPTQ Entropy 4-bit ------------------------------------------------
+    # -- 6. GPTQ Entropy Wide [2,8] -------------------------------------------
     print("\n" + "=" * 65)
-    print("Step 6: GPTQ Entropy-Linear 4-bit")
+    print("Step 6: GPTQ Entropy-Linear [2,8] 4-bit")
     print("=" * 65)
-    print("  Applying GPTQ with entropy-linear allocation...")
-    q_model_entropy = apply_gptq_plan(model, plan_entropy, hessians)
-    ppl_gptq_entropy = measure_perplexity(q_model_entropy, tokenizer)
-    del q_model_entropy
+    print("  Applying GPTQ with entropy-linear [2,8] allocation...")
+    q_model_entropy_wide = apply_gptq_plan(model, plan_entropy_wide, hessians)
+    ppl_gptq_entropy_wide = measure_perplexity(q_model_entropy_wide, tokenizer)
+    del q_model_entropy_wide
+
+    # -- 6b. GPTQ Entropy Narrow [3,6] ----------------------------------------
+    print("\n" + "=" * 65)
+    print("Step 6b: GPTQ Entropy-Linear [3,6] 4-bit")
+    print("=" * 65)
+    print("  Applying GPTQ with entropy-linear [3,6] allocation...")
+    q_model_entropy_narrow = apply_gptq_plan(model, plan_entropy_narrow, hessians)
+    ppl_gptq_entropy_narrow = measure_perplexity(q_model_entropy_narrow, tokenizer)
+    del q_model_entropy_narrow
 
     # -- 7. Results Table -----------------------------------------------------
     results = {
         "FP32 baseline": ppl_fp32,
         "GPTQ uniform 4-bit": ppl_gptq_uniform,
-        "GPTQ entropy-linear 4-bit": ppl_gptq_entropy,
+        "GPTQ entropy [2,8] 4-bit": ppl_gptq_entropy_wide,
+        "GPTQ entropy [3,6] 4-bit": ppl_gptq_entropy_narrow,
     }
+    # Keep old variable name for backward compat in printing
+    ppl_gptq_entropy = ppl_gptq_entropy_wide
 
     def delta_str(ppl, base):
         d = (ppl - base) / base * 100
@@ -552,8 +578,12 @@ if __name__ == "__main__":
         f"{delta_str(ppl_gptq_uniform, ppl_fp32):>15}"
     )
     print(
-        f"{'GPTQ entropy-linear 4-bit':<40} {ppl_gptq_entropy:>10.2f}  "
-        f"{delta_str(ppl_gptq_entropy, ppl_fp32):>15}"
+        f"{'GPTQ entropy [2,8] 4-bit':<40} {ppl_gptq_entropy_wide:>10.2f}  "
+        f"{delta_str(ppl_gptq_entropy_wide, ppl_fp32):>15}"
+    )
+    print(
+        f"{'GPTQ entropy [3,6] 4-bit':<40} {ppl_gptq_entropy_narrow:>10.2f}  "
+        f"{delta_str(ppl_gptq_entropy_narrow, ppl_fp32):>15}"
     )
     print(
         f"{'Absmax uniform 4-bit (prev)':<40} {ABSMAX_UNIFORM_PPL:>10.2f}  "
