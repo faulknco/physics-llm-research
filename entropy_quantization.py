@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple
 # Entropy Computation
 # ─────────────────────────────────────────────
 
+
 def activation_entropy(activations: np.ndarray, n_bins: int = 256) -> float:
     """
     Compute Shannon entropy of a layer's activation distribution.
@@ -71,9 +72,11 @@ def compute_layer_entropies(
 # Bit-Width Allocation Strategies
 # ─────────────────────────────────────────────
 
+
 @dataclass
 class QuantizationPlan:
     """Maps each layer to its assigned bit-width."""
+
     layer_bits: Dict[str, int]
     strategy: str
     mean_bits: float
@@ -95,6 +98,32 @@ def uniform_allocation(
         strategy=f"uniform-{bits}bit",
         mean_bits=float(bits),
     )
+
+
+def enforce_target_mean(
+    assigned_bits: np.ndarray, target_mean: float, min_bits: int, max_bits: int
+) -> np.ndarray:
+    """
+    Greedy adjustment: bump the layer with the lowest (or highest) bit
+    count up (or down) by 1 until the mean matches the target.
+    """
+    bits = assigned_bits.copy()
+    target_sum = round(target_mean * len(bits))
+    while int(bits.sum()) != target_sum:
+        diff = target_sum - int(bits.sum())
+        if diff > 0:
+            candidates = np.where(bits < max_bits)[0]
+            if len(candidates) == 0:
+                break
+            idx = candidates[np.argmin(bits[candidates])]
+            bits[idx] += 1
+        else:
+            candidates = np.where(bits > min_bits)[0]
+            if len(candidates) == 0:
+                break
+            idx = candidates[np.argmax(bits[candidates])]
+            bits[idx] -= 1
+    return bits
 
 
 def entropy_linear_allocation(
@@ -134,6 +163,11 @@ def entropy_linear_allocation(
     assigned_bits = np.round(raw_bits).astype(int)
     assigned_bits = np.clip(assigned_bits, min_bits, max_bits)
 
+    if target_mean_bits is not None:
+        assigned_bits = enforce_target_mean(
+            assigned_bits, target_mean_bits, min_bits, max_bits
+        )
+
     return QuantizationPlan(
         layer_bits={name: int(b) for name, b in zip(names, assigned_bits)},
         strategy="entropy-linear",
@@ -169,6 +203,7 @@ def entropy_threshold_allocation(
 # ─────────────────────────────────────────────
 # Simulated Quantization
 # ─────────────────────────────────────────────
+
 
 def absmax_quantize(
     weights: np.ndarray,
@@ -220,6 +255,7 @@ def evaluate_quantization_plan(
 # ─────────────────────────────────────────────
 # Toy LM Simulation
 # ─────────────────────────────────────────────
+
 
 class ToyTransformerLayer:
     """
@@ -320,8 +356,7 @@ def simulate_model(
     """
     rng = np.random.default_rng(seed)
     layers = [
-        ToyTransformerLayer(d_model, d_ff, n_heads, i, rng)
-        for i in range(n_layers)
+        ToyTransformerLayer(d_model, d_ff, n_heads, i, rng) for i in range(n_layers)
     ]
 
     # Calibration data: random token embeddings
@@ -342,6 +377,7 @@ def simulate_model(
 # Main Experiment
 # ─────────────────────────────────────────────
 
+
 def run_experiment():
     print("=" * 65)
     print("Thermodynamic Quantization: Entropy-Based Bit Allocation")
@@ -350,8 +386,12 @@ def run_experiment():
 
     # Build toy model and collect activations
     layers, activations = simulate_model(
-        d_model=64, d_ff=256, n_heads=4, n_layers=8,
-        seq_len=32, batch_size=16,
+        d_model=64,
+        d_ff=256,
+        n_heads=4,
+        n_layers=8,
+        seq_len=32,
+        batch_size=16,
     )
 
     # Compute per-layer entropy
@@ -366,7 +406,7 @@ def run_experiment():
 
     print("Per-Layer Activation Entropy:")
     print(f"  {'Layer':<35} {'Entropy':>10}  {'Bits (linear)':>14}")
-    print(f"  {'-'*35}  {'-'*10}  {'-'*14}")
+    print(f"  {'-' * 35}  {'-' * 10}  {'-' * 14}")
 
     entropy_plan_linear = entropy_linear_allocation(
         entropies, min_bits=2, max_bits=8, target_mean_bits=4.0
@@ -395,7 +435,7 @@ def run_experiment():
     # Evaluate each plan
     print("Quantization Results (Mean Reconstruction MSE):")
     print(f"  {'Strategy':<25} {'Mean bits':>10}  {'Mean MSE':>12}  {'Max MSE':>10}")
-    print(f"  {'-'*25}  {'-'*10}  {'-'*12}  {'-'*10}")
+    print(f"  {'-' * 25}  {'-' * 10}  {'-' * 12}  {'-' * 10}")
 
     results = {}
     for plan_name, plan in plans.items():
@@ -424,8 +464,12 @@ def run_experiment():
         print("  → Entropy allocation REDUCES reconstruction error ✓")
         print("    (same mean bits, better quality: entropy targets bits correctly)")
     else:
-        print("  → Entropy allocation increases reconstruction error in this toy model.")
-        print("    Note: This toy model uses random weights — real models have structured")
+        print(
+            "  → Entropy allocation increases reconstruction error in this toy model."
+        )
+        print(
+            "    Note: This toy model uses random weights — real models have structured"
+        )
         print("    weight distributions where entropy is more predictive.")
 
     print()
