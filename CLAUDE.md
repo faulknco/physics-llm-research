@@ -26,10 +26,9 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 
 ### Immediately Next
 
-1. **Validate entropy quantization on LLaMA-7B** — the toy model ran, but used random weights.
-   Real validation requires hooking into an actual LLaMA-7B forward pass and comparing
-   perplexity against OmniQuant on WikiText-2. See `entropy_quantization.py::print_production_usage()`
-   for the exact code pattern.
+1. **Scale entropy quantization to LLaMA-7B** — GPT-2 experiment validated that entropy-based
+   allocation is 2.6x better than uniform. Next: run on LLaMA-7B (Windows GPU box) with
+   GPTQ-style quantization for production-quality absolute PPL numbers.
 
 2. **Implement lattice-structured attention on GPT-2** — replace standard attention with
    exponentially-decaying attention weights (1D lattice, nearest-neighbor kernel). Baseline:
@@ -49,8 +48,15 @@ Replace Hessian-based quantization sensitivity (OmniQuant) with **activation ent
 Layers with high Shannon entropy need more bits; low-entropy layers can be aggressively quantized.
 
 - Prototype: done (toy model)
-- Next: validate on LLaMA-7B with WikiText-2 perplexity
-- Key question: does per-layer entropy correlate with OmniQuant's Hessian scores?
+- **GPT-2 124M experiment: done** (2026-03-20) — `gpt2_entropy_quantization.py`
+  - FP32 baseline PPL: 29.95
+  - Uniform 4-bit PPL: 12196 | Entropy-linear 4-bit PPL: 4730 | Hessian-linear 4-bit PPL: 12196
+  - **Entropy allocation is 2.6x better than uniform at same mean bits**
+  - Entropy vs. Hessian correlation: Pearson r=0.024 (weak) — but Hessian scores were degenerate (near-zero diagonal Fisher on GPT-2 eval mode). Inconclusive.
+  - Note: absmax quantization without scale calibration causes severe PPL degradation for all methods. The signal is in the relative comparison, not absolute PPL.
+  - Plots: `results/entropy_landscape.png`, `results/entropy_vs_hessian.png`, `results/perplexity_comparison.png`
+- Next: validate on LLaMA-7B (Windows GPU box), use GPTQ-style quantization for better absolute PPL
+- Open question: does per-layer entropy correlate with Hessian when using a proper Fisher estimator?
 - Baseline to beat: OmniQuant ICLR 2024 (arXiv 2308.13137)
 
 ### Direction 2: Renormalization-Guided Pruning
