@@ -155,8 +155,13 @@ def collect_entropies(model, samples, n_bins=256, range_estimation_samples=8):
     return entropies, linear_names
 
 
-def compute_hessian_sensitivity(model, samples):
-    """Diagonal Fisher approximation: H_diag(l) = E[(dL/dW_l)^2]."""
+def compute_hessian_sensitivity(model, samples, max_samples=32):
+    """
+    Diagonal Fisher approximation: H_diag(l) = E[(dL/dW_l)^2].
+
+    Uses model.train() mode to get differentiated gradients (eval mode
+    produces near-zero, near-constant Fisher scores on GPT-2).
+    """
     linear_names = []
     linear_params = {}
     for name, module in model.named_modules():
@@ -164,14 +169,22 @@ def compute_hessian_sensitivity(model, samples):
             linear_names.append(name)
             linear_params[name] = module.weight
 
-    print(f"Computing Hessian sensitivity for {len(linear_names)} layers...")
+    n_samples = min(max_samples, len(samples))
+    print(
+        f"Computing Hessian sensitivity for {len(linear_names)} layers "
+        f"({n_samples} samples, train mode)..."
+    )
+
+    # Switch to train mode for meaningful gradients
+    was_training = model.training
+    model.train()
 
     hessian_accum = {name: torch.zeros_like(p) for name, p in linear_params.items()}
     n_processed = 0
 
-    for i, sample in enumerate(samples):
+    for i in range(n_samples):
         model.zero_grad()
-        outputs = model(sample, labels=sample)
+        outputs = model(samples[i], labels=samples[i])
         loss = outputs.loss
         loss.backward()
 
@@ -182,15 +195,19 @@ def compute_hessian_sensitivity(model, samples):
         model.zero_grad()
         n_processed += 1
 
-        if (i + 1) % 32 == 0:
-            print(f"    {i + 1}/{len(samples)} samples processed")
+        if (i + 1) % 8 == 0:
+            print(f"    {i + 1}/{n_samples} samples processed")
+
+    # Restore original mode
+    if not was_training:
+        model.eval()
 
     sensitivities = {}
     for name in linear_names:
         sensitivities[name] = float((hessian_accum[name] / n_processed).mean().item())
 
     print(
-        f"  Sensitivity range: [{min(sensitivities.values()):.6f}, {max(sensitivities.values()):.6f}]"
+        f"  Sensitivity range: [{min(sensitivities.values()):.6e}, {max(sensitivities.values()):.6e}]"
     )
     return sensitivities
 
@@ -198,15 +215,21 @@ def compute_hessian_sensitivity(model, samples):
 def hessian_linear_allocation(
     sensitivities, min_bits=2, max_bits=8, target_mean_bits=None
 ):
-    """Same as entropy_linear_allocation but using Hessian sensitivity."""
+    """Like entropy_linear_allocation but using log-scaled Hessian sensitivity.
+
+    Log-scale normalization is used because Hessian sensitivity values
+    typically span several orders of magnitude.
+    """
     names = list(sensitivities.keys())
     values = np.array([sensitivities[n] for n in names])
 
-    v_min, v_max = values.min(), values.max()
+    # Log-scale normalization (sensitivity spans orders of magnitude)
+    log_values = np.log(values + 1e-12)
+    v_min, v_max = log_values.min(), log_values.max()
     if v_max == v_min:
         normalized = np.ones(len(names)) * 0.5
     else:
-        normalized = (values - v_min) / (v_max - v_min)
+        normalized = (log_values - v_min) / (v_max - v_min)
 
     raw_bits = min_bits + normalized * (max_bits - min_bits)
 
