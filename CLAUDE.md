@@ -13,7 +13,7 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 
 ---
 
-## Current State (as of 2026-03-20)
+## Current State (as of 2026-03-28)
 
 ### Completed Experiments
 
@@ -28,14 +28,22 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 | 7 | Combined compression | `gpt2_combined_compression.py` | Quant+pruning superadditive, lattice interferes with degraded weights |
 | 8 | GPTQ-calibrated entropy | `gpt2_gptq_entropy.py` | **GPTQ uniform (985) beats entropy (1500)** — Hessian compensation makes entropy redundant |
 | 9 | Metastable cluster analysis | `gpt2_cluster_analysis.py` | **Layers 0-11 maintain ~125 clusters, layer 12 collapses to 6** |
+| 10 | KV cache entropy quantization | `gpt2_kv_entropy_quantization.py` | **Entropy uniform in KV tensors — fails for KV allocation; per-head asymmetric breaks model (+290% PPL)** |
+| 11 | RMT / GUE attention head analysis | `gpt2_rmt_head_analysis.py` | **Attention scores are Poisson not GUE; MP signal valid for pruning not KV; RMT⊥RG r=0.233** |
+| A1 | Gamma-distribution quantizer | `gpt2_gamma_quantizer.py` | **Gamma Lloyd-Max: PPL 230 vs uniform 12196 (53x improvement); k=1.405 validates Dyson BM** |
+| A1+ | Gamma + GPTQ | `gpt2_gamma_gptq.py` | Running on Windows RTX 2060 |
 
-### Immediately Next
+### Immediately Next (Agreed Roadmap 2026-03-28)
 
-1. **Scale to LLaMA-7B** — Run validated experiments (entropy quant, RG flow, lattice attention)
-   on LLaMA-7B via Windows GPU box. The real test of generalization.
-2. **Direction 5: DMRG tensor compression** — Last unexplored direction.
-3. **Combined entropy+Hessian allocator** — Since they're orthogonal, a joint allocator should
-   beat either alone.
+Full roadmap in Obsidian: `research/physics-llm/research-roadmap.md`
+
+1. **Wait for exp 11 (RMT)** — Running on Windows RTX 2060, script: `gpt2_rmt_head_analysis.py`
+2. **A1: Gamma-distribution quantizer** — Lloyd-Max grid matched to gamma (Dyson BM prediction); ~1 day; `gpt2_gamma_quantizer.py`
+3. **B1: RMT-guided structured pruning** — Prune GUE-conforming (noise) heads entirely; builds on exp 11
+4. **A2: Joint entropy+Hessian LP allocator** — Orthogonal signals (r=-0.006) → joint LP beats either alone
+5. **C3: Spectral gap → adaptive KV cache** — Spectral gap per head determines context range needed
+6. **B5: DMRG tensor compression** — Direction 5, last unexplored; use RMT-filtered bond dimensions
+7. **LLaMA-7B scale validation** — Everything above on 7B; findings that hold are publishable
 
 ---
 
@@ -172,6 +180,8 @@ Applied all three physics principles simultaneously:
 | `gpt2_lattice_attention.py` | 3 | Lattice decay mask, ξ sweep |
 | `gpt2_cluster_analysis.py` | 4 | Metastable cluster measurement, Rigollet verification |
 | `gpt2_combined_compression.py` | 1+2+3 | All three compressions combined |
+| `gpt2_kv_entropy_quantization.py` | 1 ext | KV cache entropy quantization (exp 10) |
+| `gpt2_rmt_head_analysis.py` | 6 | RMT/GUE attention head analysis (exp 11) |
 
 ---
 

@@ -3,3 +3,7 @@ __pycache__/
 .firecrawl/
 .venv/
 *.egg-info/
+
+# Environment / secrets
+.env
+.env.*
