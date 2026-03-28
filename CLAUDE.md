@@ -31,7 +31,7 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 | 10 | KV cache entropy quantization | `gpt2_kv_entropy_quantization.py` | **Entropy uniform in KV tensors — fails for KV allocation; per-head asymmetric breaks model (+290% PPL)** |
 | 11 | RMT / GUE attention head analysis | `gpt2_rmt_head_analysis.py` | **Attention scores are Poisson not GUE; MP signal valid for pruning not KV; RMT⊥RG r=0.233** |
 | A1 | Gamma-distribution quantizer | `gpt2_gamma_quantizer.py` | **Gamma Lloyd-Max: PPL 230 vs uniform 12196 (53x improvement); k=1.405 validates Dyson BM** |
-| A1+ | Gamma + GPTQ | `gpt2_gamma_gptq.py` | Running on Windows RTX 2060 |
+| A1+ | Gamma + GPTQ | `gpt2_gamma_gptq.py` | **GPTQ-gamma (281) worse than absmax-gamma (230) — grid+compensation are coupled, not orthogonal** |
 
 ### Immediately Next (Agreed Roadmap 2026-03-28)
 
