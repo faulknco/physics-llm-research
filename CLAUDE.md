@@ -32,6 +32,7 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 | 11 | RMT / GUE attention head analysis | `gpt2_rmt_head_analysis.py` | **Attention scores are Poisson not GUE; MP signal valid for pruning not KV; RMT⊥RG r=0.233** |
 | A1 | Gamma-distribution quantizer | `gpt2_gamma_quantizer.py` | **Gamma Lloyd-Max: PPL 230 vs uniform 12196 (53x improvement); k=1.405 validates Dyson BM** |
 | A1+ | Gamma + GPTQ | `gpt2_gamma_gptq.py` | **GPTQ-gamma (281) worse than absmax-gamma (230) — grid+compensation are coupled, not orthogonal** |
+| B1 | RMT+RG joint head pruning | `gpt2_rmt_pruning.py` | **83-91% better than random; sweet spot 20% pruning (PPL 63, 1.05x compression)** |
 
 ### Immediately Next (Agreed Roadmap 2026-03-28)
 
