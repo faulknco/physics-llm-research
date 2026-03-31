@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "physics_llm_research",
+  "project_id": "dd055c87-03c3-4051-b4bd-a38ff0bb5831"
+}
