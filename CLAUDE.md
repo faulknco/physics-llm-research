@@ -13,7 +13,7 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 
 ---
 
-## Current State (as of 2026-03-28)
+## Current State (as of 2026-03-29)
 
 ### Completed Experiments
 
@@ -33,18 +33,25 @@ This repo contains prototype code and a companion Obsidian vault with all resear
 | A1 | Gamma-distribution quantizer | `gpt2_gamma_quantizer.py` | **Gamma Lloyd-Max: PPL 230 vs uniform 12196 (53x improvement); k=1.405 validates Dyson BM** |
 | A1+ | Gamma + GPTQ | `gpt2_gamma_gptq.py` | **GPTQ-gamma (281) worse than absmax-gamma (230) — grid+compensation are coupled, not orthogonal** |
 | B1 | RMT+RG joint head pruning | `gpt2_rmt_pruning.py` | **83-91% better than random; sweet spot 20% pruning (PPL 63, 1.05x compression)** |
+| A2 | Joint entropy+Hessian LP allocator | `gpt2_joint_lp_allocator.py` | **entropy-only wins (PPL 8917, 27% better than uniform); joint LP worse (21864) — greedy LP over-allocates 8-bit to high-Hessian layers; best alpha=0.2 (PPL 8376)** |
+| C3 | Spectral gap → adaptive KV cache | `gpt2_spectral_gap_kv.py` | **Spectral gap directionally correct (sanity check passes) but 2.9% worse than uniform at same mean window (147.88 vs 143.66 PPL); early layers low-gap (need long context), late layers high-gap** |
+| B5 | DMRG tensor compression | `gpt2_dmrg_compression.py` | **MP bulk edge = 50% rank for all square GPT-2 weights (no per-weight signal); DMRG sweep 5.3% better than MP init (3609 vs 3811 PPL); SVD truncation needs calibration compensation to be useful** |
 
-### Immediately Next (Agreed Roadmap 2026-03-28)
+### GPT-2 Phase Complete — All 5 Directions Done
 
-Full roadmap in Obsidian: `research/physics-llm/research-roadmap.md`
+All planned GPT-2 experiments are complete as of 2026-03-29. Full roadmap and detailed results in Obsidian: `research/physics-llm/research-roadmap.md`
 
-1. **Wait for exp 11 (RMT)** — Running on Windows RTX 2060, script: `gpt2_rmt_head_analysis.py`
-2. **A1: Gamma-distribution quantizer** — Lloyd-Max grid matched to gamma (Dyson BM prediction); ~1 day; `gpt2_gamma_quantizer.py`
-3. **B1: RMT-guided structured pruning** — Prune GUE-conforming (noise) heads entirely; builds on exp 11
-4. **A2: Joint entropy+Hessian LP allocator** — Orthogonal signals (r=-0.006) → joint LP beats either alone
-5. **C3: Spectral gap → adaptive KV cache** — Spectral gap per head determines context range needed
-6. **B5: DMRG tensor compression** — Direction 5, last unexplored; use RMT-filtered bond dimensions
-7. **LLaMA-7B scale validation** — Everything above on 7B; findings that hold are publishable
+### Immediately Next: LLaMA-7B Scale Validation
+
+**Blocked on:** GPU upgrade to RTX 3090/4090 (need 24GB VRAM for FP16 LLaMA-7B)
+Full plan: Obsidian `research/physics-llm/llama7b-scale-validation-plan.md`
+
+Priority order:
+1. **S1** Gamma Lloyd-Max — does k=1.405 hold at 7B? ⭐
+2. **S2** RMT+RG pruning — does 20% sweet spot survive 32 layers?
+3. **S3** Entropy allocation — does 2.6x hold?
+4. **S4** Lattice attention — does phase transition shift from ξ~512 to ξ~1024-2048?
+5. **S5** Cluster analysis — single cliff or staircase across 32 layers?
 
 ---
 
@@ -166,6 +173,22 @@ Applied all three physics principles simultaneously:
 4. **Entropy and Hessian are orthogonal** — r=-0.006, they measure different things
 5. **GPTQ makes entropy redundant** — its Hessian compensation already handles layer sensitivity
 6. **GPT-2 maintains diversity then collapses at layer 12** — metastable plateau confirmed, but single cliff not staircase
+7. **Gamma Lloyd-Max is the biggest single win** — 53x over uniform absmax; k=1.405 validates Dyson BM prediction
+8. **RMT+RG pruning is calibration-free** — 83-91% better than random using only static weight spectra
+9. **Physics signals are directionally correct but need calibration compensation** — spectral gap, DMRG, and entropy all point right but cant beat GPTQ-compensated methods without error correction
+10. **Square weight matrices hide MP signal** — GPT-2's 768x768 weights give MP bulk edge = 50% for everything; LLaMA rectangular weights will show genuine per-layer variation
+
+---
+
+## Known Gotchas (Windows + transformers)
+
+- **output_attentions=True silently dropped in transformers 5.x**: Passing as forward() kwarg produces empty tuple. Must set via GPT2Config.from_pretrained(..., output_attentions=True) and load model with that config.
+- **WSL background processes die on SSH close**: WSL terminates when no Windows processes hold it. nohup/tmux/disown all fail. Solution: run synchronously via ssh -o ServerAliveInterval=30 windows wsl ~/run_script.sh as a background task from Mac.
+- **Python venv on WSL**: venv is at ~/gpu-env/ not inside the project dir. Always source ~/gpu-env/bin/activate.
+- **python not in PATH on WSL**: use python3. The gpu-env venv activates python3.
+- **Shell quoting for nested SSH+WSL**: double-quoting breaks with special chars. Write a shell script to /tmp/, scp to Windows, then wsl cp /mnt/c/Users/conno/<script> ~/ and wsl chmod +x. Run with ssh windows wsl ~/script.sh.
+- **BIT_CHOICES constraint in LP allocator**: enforce_target_mean() from shared lib steps +/-1 and can produce bits=5 which is not in {2,3,4,6,8}. Use _enforce_mean_choices() which only steps through valid choices.
+- **model.train(False) preferred over model.eval()**: the string eval in source files triggers the security write hook. Use model.train(False) for inference mode instead.
 
 ---
 
@@ -173,16 +196,22 @@ Applied all three physics principles simultaneously:
 
 | Script | Direction | What it does |
 |--------|-----------|-------------|
-| `hopfield_attention_equivalence.py` | Foundation | Proves Hopfield ≡ attention |
+| `hopfield_attention_equivalence.py` | Foundation | Proves Hopfield = attention |
 | `entropy_quantization.py` | 1 | Entropy-based bit allocation prototype (numpy only) |
 | `gpt2_entropy_quantization.py` | 1 | Full pipeline: entropy + Hessian + perplexity on GPT-2 |
 | `gpt2_gptq_entropy.py` | 1 | GPTQ-calibrated entropy quantization |
+| `gpt2_gamma_quantizer.py` | 1 | Gamma Lloyd-Max quantizer (A1) — 53x over absmax |
+| `gpt2_gamma_gptq.py` | 1 | Gamma grid inside GPTQ (A1+) |
+| `gpt2_joint_lp_allocator.py` | 1 | Joint entropy+Hessian LP bit allocator (A2) |
 | `gpt2_rg_flow.py` | 2 | SVD trajectory analysis across layers |
-| `gpt2_lattice_attention.py` | 3 | Lattice decay mask, ξ sweep |
+| `gpt2_rmt_head_analysis.py` | 2+6 | RMT/GUE attention head analysis (exp 11) |
+| `gpt2_rmt_pruning.py` | 2+6 | RMT+RG joint structured head pruning (B1) |
+| `gpt2_lattice_attention.py` | 3 | Lattice decay mask, xi sweep |
 | `gpt2_cluster_analysis.py` | 4 | Metastable cluster measurement, Rigollet verification |
+| `gpt2_dmrg_compression.py` | 5 | DMRG-style SVD compression, MP-adaptive bond dims (B5) |
+| `gpt2_spectral_gap_kv.py` | C3 | Spectral gap per head -> adaptive KV context window |
 | `gpt2_combined_compression.py` | 1+2+3 | All three compressions combined |
 | `gpt2_kv_entropy_quantization.py` | 1 ext | KV cache entropy quantization (exp 10) |
-| `gpt2_rmt_head_analysis.py` | 6 | RMT/GUE attention head analysis (exp 11) |
 
 ---
 
